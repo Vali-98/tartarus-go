@@ -31,7 +31,7 @@ go test ./solver -v    # strategy average and solve timing
 
 One window switches between the analyzer and a compact card (Wails v2 has a single window). The card is always on top, does not take focus, stays out of screenshots and recordings (setting), and can be made click-through. With live scanning enabled, the app captures the game client area only while the game is foreground, handles at most one frame at a time, and sends changed boards through the Go solver. Use borderless or windowed mode; exclusive fullscreen cannot be captured.
 
-Use **Shift+Space** or the system tray's **Show / Hide** action to hide the app without stopping background scanning. Closing the window hides it to the tray; use the tray's **Quit** action to exit.
+Only one app instance runs per Windows session. Use **Ctrl+Alt+Space** or the system tray's **Show / Hide** action to hide the app without stopping background scanning. Closing the window hides it to the tray; use the tray's **Quit** action to exit.
 
 ## Screenshot Reader
 
@@ -47,13 +47,13 @@ The simulator's labeled screenshot corpus is not present in this workspace, so t
 | Ctrl+Alt+A | Analyzer |
 | Ctrl+Alt+S | Re-solve |
 | Ctrl+Alt+L | Lock/unlock click-through |
-| Shift+Space | Hide/show the app |
+| Ctrl+Alt+Space | Hide/show the app |
 
 Run the game borderless or windowed: nothing can draw over exclusive fullscreen.
 
 ## Performance
 
-Full runs of the strategy, single thread, same machine: JS (Node) about 170 runs/s, Go about 2,600 runs/s. Average Rainbows per run agree (4.03 Go, 4.09 JS over different seeds). Solver worker choices scale with the logical CPU count. Game-first defaults to one worker; Most reserves one logical processor, or two on systems with 12 or more, and the process runs below normal priority. A one-logical-processor system cannot reserve a separate core.
+Full runs of the strategy, single thread, same machine: JS (Node) about 170 runs/s, Go about 2,600 runs/s. Average Rainbows per run agree (4.03 Go, 4.09 JS over different seeds). The Monte Carlo check now evaluates up to 10,000 paired rollouts per candidate, stopping early when the leading option is decisively ahead. Solver worker choices scale with the logical CPU count. Game-first defaults to one worker; Most reserves one logical processor, or two on systems with 12 or more, and the process runs below normal priority. A one-logical-processor system cannot reserve a separate core.
 
 ## Not ported yet
 

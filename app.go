@@ -24,6 +24,7 @@ import (
 )
 
 const windowTitle = "Tartarus-Go"
+const solverRollouts = 10000
 
 var gameTitle = regexp.MustCompile(`^Torchlight: Infinite\s*$`)
 
@@ -87,7 +88,7 @@ type App struct {
 	jobID                  int64
 	hwnd                   uintptr
 	mode                   string
-	hidden                 bool
+	quitting               bool
 	normal                 rect
 	game                   GameStatus
 	gameHWND               uintptr
@@ -146,7 +147,7 @@ func (a *App) startup(ctx context.Context) {
 		2: {modifiers: modControl | modAlt, key: 'A'},
 		3: {modifiers: modControl | modAlt, key: 'S'},
 		4: {modifiers: modControl | modAlt, key: 'L'},
-		5: {modifiers: modShift, key: ' '},
+		5: {modifiers: modControl | modAlt, key: ' '},
 	}, a.onHotkey, func(hwnd uintptr, x, y int32) {
 		select {
 		case mouseUps <- mouseUp{hwnd: hwnd, x: x, y: y}:
@@ -158,7 +159,7 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) trayReady() {
 	systray.SetIcon(trayIcon)
 	systray.SetTitle("Tartarus")
-	systray.SetTooltip("Tartarus - Shift+Space to show or hide")
+	systray.SetTooltip("Tartarus - Ctrl+Alt+Space to show or hide")
 	showHide := systray.AddMenuItem("Show / Hide", "Toggle the Tartarus window")
 	systray.AddSeparator()
 	quit := systray.AddMenuItem("Quit", "Exit Tartarus")
@@ -168,7 +169,7 @@ func (a *App) trayReady() {
 			case <-showHide.ClickedCh:
 				a.toggleHidden()
 			case <-quit.ClickedCh:
-				wr.Quit(a.ctx)
+				a.Quit()
 			case <-a.ctx.Done():
 				systray.Quit()
 				return
@@ -179,11 +180,12 @@ func (a *App) trayReady() {
 
 func (a *App) beforeClose(context.Context) bool {
 	a.mu.Lock()
-	hidden := a.hidden
+	quitting := a.quitting
 	a.mu.Unlock()
-	if !hidden {
-		a.toggleHidden()
+	if quitting {
+		return false
 	}
+	a.toggleHidden()
 	return true
 }
 
@@ -242,15 +244,14 @@ func (a *App) onHotkey(id int) {
 		s.ClickThrough = !s.ClickThrough
 		a.SaveSettings(s)
 		wr.EventsEmit(a.ctx, "settings", a.GetSettings())
-	case 5: // Shift+Space: hide or show the app
+	case 5: // Ctrl+Alt+Space: hide or show the app
 		a.toggleHidden()
 	}
 }
 
 func (a *App) toggleHidden() {
 	a.mu.Lock()
-	a.hidden = !a.hidden
-	hidden, hwnd := a.hidden, a.hwnd
+	hwnd := a.hwnd
 	a.mu.Unlock()
 	if hwnd == 0 {
 		hwnd = findWindow(windowTitle)
@@ -258,7 +259,7 @@ func (a *App) toggleHidden() {
 		a.hwnd = hwnd
 		a.mu.Unlock()
 	}
-	if hidden {
+	if windowVisible(hwnd) {
 		showWindow(hwnd, swHide)
 	} else {
 		showWindow(hwnd, swShowNoActivate)
@@ -605,7 +606,12 @@ func workersFor(mode string, n int) int {
 }
 
 // Quit closes the app.
-func (a *App) Quit() { wr.Quit(a.ctx) }
+func (a *App) Quit() {
+	a.mu.Lock()
+	a.quitting = true
+	a.mu.Unlock()
+	wr.Quit(a.ctx)
+}
 
 // ---------- Solving ----------
 
@@ -626,7 +632,7 @@ func (a *App) Solve(b engine.BoardInput) (adv Advice) {
 		return Advice{Error: "The run is over."}
 	}
 	ctx, cancel := context.WithCancel(a.ctx)
-	job := solver.Start(ctx, st, solver.Options{Rollouts: 1500, Workers: a.workers(), StopAt: 4})
+	job := solver.Start(ctx, st, solver.Options{Rollouts: solverRollouts, Workers: a.workers(), StopAt: 4})
 	a.mu.Lock()
 	if a.cancel != nil {
 		a.cancel()

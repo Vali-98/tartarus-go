@@ -290,6 +290,11 @@ func foregroundWindow() uintptr {
 	return h
 }
 
+func windowVisible(hwnd uintptr) bool {
+	visible, _, _ := procIsWindowVisible.Call(hwnd)
+	return visible != 0
+}
+
 func activateWindow(hwnd uintptr) bool {
 	if hwnd == 0 {
 		return false
