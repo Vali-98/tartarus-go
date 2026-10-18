@@ -16,6 +16,7 @@ let logStatus = { state: 'searching', message: 'Locating UE_game.log...' };
 let logPathDraft = null;
 let runEnded = false;
 let treasureStep = '';
+let lastInstrumentOfferAt = 0;
 const lastEvent = {};
 let solveTimer = 0;
 let scanWorker = null;
@@ -156,6 +157,7 @@ function applyPick(result) {
   next.freshOffer = fresh;
   if (fresh) next.startEvent = '';
   board = next;
+  lastInstrumentOfferAt = Date.now();
   treasureStep = '';
   runEnded = false;
   selected = next.warden;
@@ -164,6 +166,22 @@ function applyPick(result) {
   scanInfo.status = `${fresh ? 'Start-of-run' : 'Reward'} instrument offer: ${names.join(', ')}${result.reroll ? ' (re-roll available)' : ''}.`;
   scanInfo.checks = unsure.map((label) => ({ label: `Verify ${label}`, conf: 0, cell: -1 }));
   localStorage.setItem(KEY, JSON.stringify(board));
+  summary = null;
+  advice = null;
+  render();
+  clearTimeout(solveTimer);
+  solveTimer = setTimeout(solve, 0);
+}
+
+function skipItemOffer() {
+  if (board.pending !== 'tool' || board.freshOffer) return;
+  board.pending = '';
+  board.offer = [];
+  board.rerolls = 0;
+  board.phase = 'manage';
+  localStorage.setItem(KEY, JSON.stringify(board));
+  scanInfo.status = 'Item offer skipped. Add the selected tool manually if it was not detected.';
+  scanInfo.checks = [];
   summary = null;
   advice = null;
   render();
@@ -202,11 +220,20 @@ function applyScan(result, frameKind = '') {
     render();
     return;
   }
+  const pendingInstrumentOffer = board.pending === 'tool' && board.offer.length > 0;
+  if (frameKind === 'treasure' && (pendingInstrumentOffer || Date.now() - lastInstrumentOfferAt < 2500)) {
+    frameKind = 'foreground';
+  }
   if (!result.ok) {
     if (frameKind === 'treasure') {
       treasureStep = 'view';
       scanInfo.status = "Warden's Treasure: select View Prison Status in the game to rescan the board.";
       scanInfo.checks = [];
+      render();
+      return;
+    }
+    if (pendingInstrumentOffer) {
+      scanInfo.status = 'Instrument offer remains active; waiting for its controls or Skip item offer.';
       render();
       return;
     }
@@ -228,6 +255,12 @@ function applyScan(result, frameKind = '') {
       summary = null;
       advice = { error: 'Waiting for the current game controls to be readable.' };
     }
+    render();
+    return;
+  }
+  const controlsReady = !!result.chain || !!(result.doors && result.doors.cells.length) || !!result.decision;
+  if (pendingInstrumentOffer && !controlsReady) {
+    scanInfo.status = 'Instrument offer remains active; waiting for its controls or Skip item offer.';
     render();
     return;
   }
@@ -352,7 +385,6 @@ function applyScan(result, frameKind = '') {
   board = next;
   const stateChanged = previous !== JSON.stringify(next);
   const live = scanInfo.status.startsWith('Live') || scanInfo.status.startsWith('Reading foreground');
-  const controlsReady = !!result.chain || !!(result.doors && result.doors.cells.length) || !!result.decision;
   scanInfo.status = `${live ? 'Live' : 'Board'} read in ${result.ms} ms${result.loc ? ` (match ${(result.loc.score || 0).toFixed(2)})` : ''}. Review ${checks.length} item${checks.length === 1 ? '' : 's'}.${stateChanged ? '' : ' Board unchanged.'}`;
   scanInfo.checks = checks;
   scanInfo.notes = result.notes || [];
@@ -557,6 +589,12 @@ function scanPanel(open = true) {
   panel.append(h('div', { class: 'row' },
     h('label', {}, check(settings.autoScan, (value) => saveSettings({ autoScan: value })), ' Follow foreground game'),
     select([['game', 'Game-first'], ['one', 'One worker'], ['quarter', 'Quarter'], ['half', 'Half'], ['most', 'Most']], settings.cpu || 'game', (value) => saveSettings({ cpu: value }))));
+  if (board.pending === 'tool' && !board.freshOffer) {
+    panel.append(h('div', { class: 'row' }, h('button', {
+      title: 'Dismiss this offer. Add the acquired tool manually if it was not detected.',
+      onclick: skipItemOffer,
+    }, 'Skip item offer')));
+  }
   panel.append(h('h3', { style: 'margin-top:10px' }, 'UE game log'),
     h('div', { id: 'log-follow-status', class: 'stat' }, `${logStatus.state || 'searching'}: ${logStatus.message || ''}${logStatus.path ? ` (${logStatus.path})` : ''}`),
     h('div', { class: 'row log-path' },
@@ -626,6 +664,13 @@ function renderOverlay() {
     }
   }
   if (!settings.clickThrough) {
+    if (board.pending === 'tool' && !board.freshOffer) {
+      kids.push(h('button', {
+        class: 'ov-scan',
+        title: 'Dismiss this offer. Add the acquired tool manually if it was not detected.',
+        onclick: skipItemOffer,
+      }, 'Skip item offer'));
+    }
     kids.push(h('button', {
       class: 'ov-scan',
       disabled: !game.running,
