@@ -3,5 +3,12 @@
   "name": "Tartarus",
   "outputfilename": "tartarus",
   "frontend:dir": "frontend",
-  "author": { "name": "tartarus-go" }
+  "author": { "name": "tartarus-go" },
+  "info": {
+    "companyName": "Tartarus",
+    "productName": "Tartarus",
+    "productVersion": "0.0.1",
+    "copyright": "",
+    "comments": ""
+  }
 }
