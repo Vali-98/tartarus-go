@@ -84,6 +84,7 @@ const (
 	wmXButtonUp   = 0x020C
 	modAlt        = 0x1
 	modControl    = 0x2
+	modShift      = 0x4
 	modNoRepeat   = 0x4000
 	smCxScreen    = 0
 	smCyScreen    = 1
@@ -97,6 +98,11 @@ type mouseLLHookData struct {
 	Flags     uint32
 	Time      uint32
 	ExtraInfo uintptr
+}
+
+type hotkeySpec struct {
+	modifiers uint
+	key       rune
 }
 
 func utf16(s string) *uint16 { p, _ := syscall.UTF16PtrFromString(s); return p }
@@ -295,13 +301,13 @@ func activateWindow(hwnd uintptr) bool {
 
 // ---------- Global hotkeys ----------
 
-// runHotkeys registers Ctrl+Alt+<key> hotkeys and calls fn with the id of
-// each press. It blocks, so run it in its own goroutine.
-func runHotkeys(keys map[int]rune, fn func(id int), onMouseUp func(hwnd uintptr, x, y int32)) {
+// runHotkeys registers global hotkeys and calls fn with the id of each press.
+// It blocks, so run it in its own goroutine.
+func runHotkeys(keys map[int]hotkeySpec, fn func(id int), onMouseUp func(hwnd uintptr, x, y int32)) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	for id, k := range keys {
-		procRegisterHotKey.Call(0, uintptr(id), modControl|modAlt|modNoRepeat, uintptr(k))
+	for id, key := range keys {
+		procRegisterHotKey.Call(0, uintptr(id), uintptr(key.modifiers)|modNoRepeat, uintptr(key.key))
 	}
 	mouseCallback := syscall.NewCallback(func(code uintptr, message uintptr, input *mouseLLHookData) uintptr {
 		if code == hcAction && onMouseUp != nil && (message == wmLButtonUp || message == wmRButtonUp || message == wmMButtonUp || message == wmXButtonUp) {

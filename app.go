@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/getlantern/systray"
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"tartarus/engine"
@@ -86,6 +87,7 @@ type App struct {
 	jobID                  int64
 	hwnd                   uintptr
 	mode                   string
+	hidden                 bool
 	normal                 rect
 	game                   GameStatus
 	gameHWND               uintptr
@@ -138,12 +140,51 @@ func (a *App) startup(ctx context.Context) {
 	go a.watchLiveScan()
 	go a.watchLog()
 	go a.watchMouseUps(mouseUps)
-	go runHotkeys(map[int]rune{1: 'O', 2: 'A', 3: 'S', 4: 'L'}, a.onHotkey, func(hwnd uintptr, x, y int32) {
+	go systray.Run(a.trayReady, func() {})
+	go runHotkeys(map[int]hotkeySpec{
+		1: {modifiers: modControl | modAlt, key: 'O'},
+		2: {modifiers: modControl | modAlt, key: 'A'},
+		3: {modifiers: modControl | modAlt, key: 'S'},
+		4: {modifiers: modControl | modAlt, key: 'L'},
+		5: {modifiers: modShift, key: ' '},
+	}, a.onHotkey, func(hwnd uintptr, x, y int32) {
 		select {
 		case mouseUps <- mouseUp{hwnd: hwnd, x: x, y: y}:
 		default:
 		}
 	})
+}
+
+func (a *App) trayReady() {
+	systray.SetIcon(trayIcon)
+	systray.SetTitle("Tartarus")
+	systray.SetTooltip("Tartarus - Shift+Space to show or hide")
+	showHide := systray.AddMenuItem("Show / Hide", "Toggle the Tartarus window")
+	systray.AddSeparator()
+	quit := systray.AddMenuItem("Quit", "Exit Tartarus")
+	go func() {
+		for {
+			select {
+			case <-showHide.ClickedCh:
+				a.toggleHidden()
+			case <-quit.ClickedCh:
+				wr.Quit(a.ctx)
+			case <-a.ctx.Done():
+				systray.Quit()
+				return
+			}
+		}
+	}()
+}
+
+func (a *App) beforeClose(context.Context) bool {
+	a.mu.Lock()
+	hidden := a.hidden
+	a.mu.Unlock()
+	if !hidden {
+		a.toggleHidden()
+	}
+	return true
 }
 
 func (a *App) domReady(ctx context.Context) {
@@ -169,6 +210,7 @@ func (a *App) shutdown(ctx context.Context) {
 		a.cancel()
 	}
 	a.mu.Unlock()
+	systray.Quit()
 	a.save()
 }
 
@@ -200,6 +242,26 @@ func (a *App) onHotkey(id int) {
 		s.ClickThrough = !s.ClickThrough
 		a.SaveSettings(s)
 		wr.EventsEmit(a.ctx, "settings", a.GetSettings())
+	case 5: // Shift+Space: hide or show the app
+		a.toggleHidden()
+	}
+}
+
+func (a *App) toggleHidden() {
+	a.mu.Lock()
+	a.hidden = !a.hidden
+	hidden, hwnd := a.hidden, a.hwnd
+	a.mu.Unlock()
+	if hwnd == 0 {
+		hwnd = findWindow(windowTitle)
+		a.mu.Lock()
+		a.hwnd = hwnd
+		a.mu.Unlock()
+	}
+	if hidden {
+		showWindow(hwnd, swHide)
+	} else {
+		showWindow(hwnd, swShowNoActivate)
 	}
 }
 
@@ -280,6 +342,10 @@ func (a *App) watchMouseUps(events <-chan mouseUp) {
 func (a *App) watchLiveScan() {
 	for t := time.NewTicker(350 * time.Millisecond); ; <-t.C {
 		a.mu.Lock()
+		if !a.settings.AutoScan && a.captureRequested && a.captureReason != "manual" {
+			a.captureRequested = false
+			a.captureReason = ""
+		}
 		if (!a.settings.AutoScan && !a.captureRequested) || !a.game.Foreground || a.gameHWND == 0 || a.scanBusy {
 			a.mu.Unlock()
 			continue

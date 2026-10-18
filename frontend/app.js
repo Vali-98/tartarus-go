@@ -259,7 +259,7 @@ function applyScan(result, frameKind = '') {
     return;
   }
   const controlsReady = !!result.chain || !!(result.doors && result.doors.cells.length) || !!result.decision;
-  if (pendingInstrumentOffer && !controlsReady) {
+  if (pendingInstrumentOffer && !controlsReady && frameKind !== 'manual') {
     scanInfo.status = 'Instrument offer remains active; waiting for its controls or Skip item offer.';
     render();
     return;
@@ -586,9 +586,10 @@ function globalsView(open = true) {
 
 function scanPanel(open = true) {
   const panel = h('div', { class: 'panel-content' }, h('div', { class: 'stat' }, scanInfo.status));
-  panel.append(h('div', { class: 'row' },
-    h('label', {}, check(settings.autoScan, (value) => saveSettings({ autoScan: value })), ' Follow foreground game'),
-    select([['game', 'Game-first'], ['one', 'One worker'], ['quarter', 'Quarter'], ['half', 'Half'], ['most', 'Most']], settings.cpu || 'game', (value) => saveSettings({ cpu: value }))));
+  panel.append(
+    row('Scan mode', select([['auto', 'Automatic'], ['manual', 'Manual']], settings.autoScan ? 'auto' : 'manual', (value) => saveSettings({ autoScan: value === 'auto' }))),
+    row('CPU budget', select([['game', 'Game-first'], ['one', 'One worker'], ['quarter', 'Quarter'], ['half', 'Half'], ['most', 'Most']], settings.cpu || 'game', (value) => saveSettings({ cpu: value }))));
+  if (!settings.autoScan) panel.append(h('div', { class: 'stat' }, 'Manual mode: click Scan now to read the current game screen.'));
   if (board.pending === 'tool' && !board.freshOffer) {
     panel.append(h('div', { class: 'row' }, h('button', {
       title: 'Dismiss this offer. Add the acquired tool manually if it was not detected.',

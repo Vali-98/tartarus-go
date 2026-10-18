@@ -31,9 +31,11 @@ go test ./solver -v    # strategy average and solve timing
 
 One window switches between the analyzer and a compact card (Wails v2 has a single window). The card is always on top, does not take focus, stays out of screenshots and recordings (setting), and can be made click-through. With live scanning enabled, the app captures the game client area only while the game is foreground, handles at most one frame at a time, and sends changed boards through the Go solver. Use borderless or windowed mode; exclusive fullscreen cannot be captured.
 
+Use **Shift+Space** or the system tray's **Show / Hide** action to hide the app without stopping background scanning. Closing the window hides it to the tray; use the tray's **Quit** action to exit.
+
 ## Screenshot Reader
 
-The **Follow foreground game** toggle captures and reads the game automatically. The same local reader accepts an image file, clipboard image or dropped screenshot. It reads cells, warden, today's cards, riot countdown, instruments, start-card badge, Chromatic vault count and consume-screen meals. Instrument offers use their dedicated trained card reader; a log-confirmed Chromatic Treasure opens a pending gift choice, including Opulence's extra picks. Solver advice waits for visible patrol/decision controls or an explicit offer/consume screen, rather than recalculating on every ordinary board frame. Findings below 60% confidence are called out; clicking a cell finding selects it for correction. On a consume-selection screen, the solver only offers the highlighted meals for the current bite, then resumes chain simulation. The objective still needs to be set by hand, Tusk marks are retained from the previous board when possible, and other cells on the darkened consume screen need a manual review.
+Set **Scan mode** to Automatic to capture and read the foreground game; Manual disables background captures, and **Scan now** reads the current screen on demand. The same local reader accepts an image file, clipboard image or dropped screenshot. It reads cells, warden, today's cards, riot countdown, instruments, start-card badge, Chromatic vault count and consume-screen meals. Manual scans try the dedicated trained instrument-card reader before the board reader. A mid-run offer can be skipped if the game has already advanced; add the acquired tool manually if it was not detected. A log-confirmed Chromatic Treasure opens a pending gift choice, including Opulence's extra picks. Solver advice waits for visible patrol/decision controls or an explicit offer/consume screen, rather than recalculating on every ordinary board frame. Findings below 60% confidence are called out; clicking a cell finding selects it for correction. On a consume-selection screen, the solver only offers the highlighted meals for the current bite, then resumes chain simulation. The objective still needs to be set by hand, Tusk marks are retained from the previous board when possible, and other cells on the darkened consume screen need a manual review.
 
 UE log following discovers the latest `UE_game.log` in the game's Steam libraries or known standalone install locations. In the analyzer's Screenshot Reader panel, use **Browse** to select a log or enter a path and press **Use**; leave it blank to return to auto-discovery. The follower reads new lines only, handles truncation/replacement and limits each poll to 1 MiB. Its built-in S16 triggers request a scan after the game settles; the foreground sampler remains as a fallback. For trigger-driven scans, enable the game's detailed log from Esc → Account Related → Enable Log, then restart the game session. Log contents stay local.
 
@@ -45,6 +47,7 @@ The simulator's labeled screenshot corpus is not present in this workspace, so t
 | Ctrl+Alt+A | Analyzer |
 | Ctrl+Alt+S | Re-solve |
 | Ctrl+Alt+L | Lock/unlock click-through |
+| Shift+Space | Hide/show the app |
 
 Run the game borderless or windowed: nothing can draw over exclusive fullscreen.
 

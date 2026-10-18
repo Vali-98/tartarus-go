@@ -10,8 +10,15 @@ self.onmessage = (event) => {
     const image = { width, height, data: new Uint8ClampedArray(data) };
     let result;
     let detectedKind = kind;
-    if (kind === 'instruments') {
-      result = self.TartarusScan.scanPick(image, self.TARTARUS_SCAN, self.TARTARUS_PICK);
+    if (kind === 'instruments' || kind === 'manual') {
+      const pick = self.TartarusScan.scanPick(image, self.TARTARUS_SCAN, self.TARTARUS_PICK);
+      const confidences = pick.cards ? pick.cards.map((card) => card ? card.conf : 0).sort((a, b) => b - a) : [];
+      if (kind === 'instruments' || pick.ok && confidences[1] >= 0.5) {
+        result = pick;
+        detectedKind = 'instruments';
+      } else {
+        result = self.TartarusScan.scan(image, self.TARTARUS_SCAN, { cache });
+      }
     } else {
       result = self.TartarusScan.scan(image, self.TARTARUS_SCAN, { cache });
       if (!result.ok) {
