@@ -2,6 +2,12 @@
 
 A Go port of the Tartarus Simulator's solver and overlay, for Windows. The rules engine and the Monte Carlo solver run natively in Go on every core instead of in the browser's JS sandbox.
 
+## Support
+
+Issues and pull requests are welcome. You can also support development on Ko-fi.
+
+<a href="https://ko-fi.com/vali98"><img src="https://storage.ko-fi.com/cdn/kofi5.png?v=6" alt="Support me on Ko-fi" height="36"></a>
+
 ## Layout
 
 | Path | What |
