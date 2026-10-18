@@ -1105,6 +1105,26 @@
     return [0.006, 0.01, 0.016, 0.026].map((f) => Math.max(3, Math.round(img.height * f)));
   }
 
+  function hasTreasureSelector(img) {
+    const x0 = img.width * 0.12;
+    const x1 = img.width * 0.88;
+    const y0 = img.height * 0.12;
+    const y1 = img.height * 0.88;
+    for (const r of textRadii(img)) {
+      const lines = textLines(img, x0, y0, x1, y1, { minH: 7, maxH: Math.max(48, img.height * 0.08), r });
+      for (const line of lines) {
+        for (const piece of line.pieces) {
+          const words = piece.words.map((word) => word.glyphs.length);
+          if (words.length !== 3 || words.some((count, i) => Math.abs(count - [4, 6, 6][i]) > 1)) continue;
+          const center = (piece.x0 + piece.x1) / 2;
+          const span = (piece.x1 - piece.x0) / Math.max(1, line.h);
+          if (center > img.width * 0.28 && center < img.width * 0.72 && span > 4 && span < 30) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // Two digits can run together into one blob: splits it where the ink is
   // thinnest near the middle.
   function splitGlyph(gray, w, g) {
@@ -1903,7 +1923,7 @@
     return { ok: true, loc, cells, warden, doors, days, tools, badge, chromatic, objective, chain, decision, notes, ms: Date.now() - t0 };
   }
 
-  const api = { scan, scanPick, pickArtBox, pickRerollShown, locateBoard, readCell, findWarden, findToolIcons, readDoors, readDays, doorCards, dayNumber, prefixVector, textLines, glyphVector, faceVector, artFeature, similarity, hsv, blobs, at, gridOf, scaleAt, grayOf, blur, RING, H0, ARROW, FACE, GLYPH, locateByLabels, readChainScreen, readDecision, readObjectiveTitle, withPanelIcons, badgeBox, readBadge };
+  const api = { scan, scanPick, hasTreasureSelector, pickArtBox, pickRerollShown, locateBoard, readCell, findWarden, findToolIcons, readDoors, readDays, doorCards, dayNumber, prefixVector, textLines, glyphVector, faceVector, artFeature, similarity, hsv, blobs, at, gridOf, scaleAt, grayOf, blur, RING, H0, ARROW, FACE, GLYPH, locateByLabels, readChainScreen, readDecision, readObjectiveTitle, withPanelIcons, badgeBox, readBadge };
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.TartarusScan = api;
 })(typeof window !== 'undefined' ? window : typeof self !== 'undefined' ? self : globalThis);

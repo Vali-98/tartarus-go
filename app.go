@@ -24,7 +24,7 @@ import (
 )
 
 const windowTitle = "Tartarus-Go"
-const solverRollouts = 10000
+const solverRollouts = 4000
 
 var gameTitle = regexp.MustCompile(`^Torchlight: Infinite\s*$`)
 

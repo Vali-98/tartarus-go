@@ -220,8 +220,21 @@ function applyScan(result, frameKind = '') {
     render();
     return;
   }
+  if (result && result.treasureSelector) {
+    if (treasureStep === 'return') {
+      applyTreasureChoice();
+      return;
+    }
+    treasureStep = 'view';
+    summary = null;
+    advice = null;
+    scanInfo.status = "Warden's Treasure detected. Select View Prison Status, scan the prison board, then return to the Treasure selector for gift advice.";
+    scanInfo.checks = [];
+    render();
+    return;
+  }
   const pendingInstrumentOffer = board.pending === 'tool' && board.offer.length > 0;
-  if (frameKind === 'treasure' && (pendingInstrumentOffer || Date.now() - lastInstrumentOfferAt < 2500)) {
+  if (frameKind === 'treasure' && treasureStep !== 'view' && (pendingInstrumentOffer || Date.now() - lastInstrumentOfferAt < 2500)) {
     frameKind = 'foreground';
   }
   if (!result.ok) {
@@ -232,15 +245,15 @@ function applyScan(result, frameKind = '') {
       render();
       return;
     }
-    if (pendingInstrumentOffer) {
-      scanInfo.status = 'Instrument offer remains active; waiting for its controls or Skip item offer.';
+    if (treasureStep === 'view') {
+      scanInfo.status = "Warden's Treasure is open. Select View Prison Status in the game, then scan again while the prison board is shown.";
+      scanInfo.checks = [];
+      advice = null;
       render();
       return;
     }
-    if (treasureStep === 'view' && frameKind === 'board') {
-      treasureStep = 'return';
-      scanInfo.status = 'Treasure status changed. Click Return to Selection in the game to continue.';
-      scanInfo.checks = [];
+    if (pendingInstrumentOffer) {
+      scanInfo.status = 'Instrument offer remains active; waiting for its controls or Skip item offer.';
       render();
       return;
     }
@@ -390,7 +403,7 @@ function applyScan(result, frameKind = '') {
   scanInfo.notes = result.notes || [];
   localStorage.setItem(KEY, JSON.stringify(board));
   selected = result.warden ? result.warden.cell : selected;
-  if (returnToSelection || treasureStep === 'view' && frameKind === 'board') {
+  if (returnToSelection || treasureStep === 'view') {
     treasureStep = 'return';
     scanInfo.status = returnToSelection
       ? "Board rescanned. Click Return to Selection in the game to continue."
