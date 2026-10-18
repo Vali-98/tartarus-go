@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tartarus</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="analyzer">
+  <header class="top">
+    <h1>Tartarus <small>Go solver</small></h1>
+    <span id="game" class="pill off">game: not running</span>
+    <span id="rainbow-count" class="pill rainbow-count">Rainbows 0/10</span>
+    <span class="spacer"></span>
+    <button id="read-shot" class="ghost">Read screenshot</button>
+    <input id="shot-file" type="file" accept="image/*" hidden>
+    <button id="reset" class="ghost">Clear board</button>
+    <button id="to-overlay" class="primary">Overlay mode <kbd>Ctrl+Alt+O</kbd></button>
+  </header>
+  <main>
+    <section class="board-col">
+      <div id="ring" class="ring"></div>
+      <div class="legend">Click a cell to edit it. <b>W</b> warden, <b>D</b> today's door card, gold outline: recommended.</div>
+      <div id="result" class="result"></div>
+    </section>
+    <aside class="side">
+      <div id="scan-panel" class="card"></div>
+      <div id="cell-editor" class="card"></div>
+      <div id="globals" class="card"></div>
+    </aside>
+  </main>
+</div>
+
+<div id="overlay" class="overlay">
+  <div class="ov-bar" style="--wails-draggable:drag">
+    <span id="ov-dot" class="dot off"></span>
+    <b>Tartarus</b>
+    <span class="spacer"></span>
+    <span id="ov-rainbow-count" class="ov-rainbow-count">0/10 Rainbows</span>
+    <button id="ov-fold" title="Fold">–</button>
+    <button id="ov-lock" title="Click-through">Lock</button>
+    <button id="ov-open" title="Analyzer (Ctrl+Alt+A)">Open</button>
+  </div>
+  <div id="ov-body" class="ov-body"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
