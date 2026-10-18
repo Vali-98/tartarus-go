@@ -54,7 +54,7 @@ func decide(st *engine.State, P *Weights, rnd *rng32) (Action, bool) {
 	if len(st.Pending) > 0 {
 		ch := st.Pending[0]
 		if ch.Gift {
-			return Action{Type: ActChoose, ID: pickGift(st, c, ch.Options, rnd)}, true
+			return Action{Type: ActChoose, ID: pickGift(st, &c, ch.Options, rnd)}, true
 		}
 		if wantsReroll(st, P, toolsOf(ch.Options)) {
 			return Action{Type: ActReroll}, true
@@ -62,7 +62,7 @@ func decide(st *engine.State, P *Weights, rnd *rng32) (Action, bool) {
 		return Action{Type: ActChoose, ID: uint8(pickTool(st, P, toolsOf(ch.Options)))}, true
 	}
 	if st.Chaining.Active {
-		opts := devourScores(st, c)
+		opts := devourScores(st, &c)
 		if c.chainStop && (len(opts) == 0 || opts[0].score < P.StopMargin) {
 			return Action{Type: ActStopChain}, true
 		}
@@ -76,7 +76,7 @@ func decide(st *engine.State, P *Weights, rnd *rng32) (Action, bool) {
 			return Action{Type: ActOffice, Choice: P.Office}, true
 		}
 		comp, _ := composition(st, -1)
-		o := officeValues(st, c, &comp)
+		o := officeValues(st, &c, &comp)
 		if o.bestow >= o.instigate {
 			return Action{Type: ActOffice, Choice: "bestow"}, true
 		}
@@ -97,18 +97,18 @@ func decide(st *engine.State, P *Weights, rnd *rng32) (Action, bool) {
 			return Action{Type: ActEvent, Accept: cell.Inmate.Tier < engine.Supreme}, true
 		}
 		comp, _ := composition(st, st.Event.Cell)
-		return Action{Type: ActEvent, Accept: executionValue(c, int(cell.Inmate.Tier), int(cell.Inmate.Beast), &comp) > P.ExecMargin}, true
+		return Action{Type: ActEvent, Accept: executionValue(&c, int(cell.Inmate.Tier), int(cell.Inmate.Beast), &comp) > P.ExecMargin}, true
 	}
 	if st.Phase == engine.PhasePatrol {
-		if s := patrolScores(st, c); len(s) > 0 {
+		if s := patrolScores(st, &c); len(s) > 0 {
 			return Action{Type: ActPatrol, Cell: s[0].Cell}, true
 		}
 		return Action{Type: ActEnd}, true
 	}
-	swapGain := swapGainHere(st, c)
-	huntCell, huntVal, haveHunt := bestHunt(st, c)
+	swapGain := swapGainHere(st, &c)
+	huntCell, huntVal, haveHunt := bestHunt(st, &c)
 	if st.CanDevourNow() {
-		d := devourScores(st, c)
+		d := devourScores(st, &c)
 		if len(d) > 0 && c.consumesLeft > 0 && P.WConsume != 0 {
 			d[0].score += P.WConsume / float64(c.consumesLeft)
 		}
@@ -344,7 +344,7 @@ func reason(st *engine.State, a Action, P *Weights) string {
 	c := newContext(st, P)
 	switch a.Type {
 	case ActPatrol:
-		for _, s := range patrolScores(st, c) {
+		for _, s := range patrolScores(st, &c) {
 			if s.Cell == a.Cell && s.Why != "" {
 				return strings.ToUpper(s.Why[:1]) + s.Why[1:] + "."
 			}

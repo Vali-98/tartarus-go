@@ -157,8 +157,8 @@ func composition(st *engine.State, exclude int) (comp [24]int8, crowd int) {
 	return
 }
 
-func newContext(st *engine.State, P *Weights) *evalCtx {
-	c := &evalCtx{st: st, P: P}
+func newContext(st *engine.State, P *Weights) evalCtx {
+	c := evalCtx{st: st, P: P}
 	for b := 0; b < 4; b++ {
 		c.eats[b] = 1 << engine.FoodChain[b]
 	}
@@ -426,7 +426,7 @@ func feed(c *evalCtx, t, b int, comp *[24]int8, crowd int) float64 {
 		out = c.v[t]
 	}
 	if c.memo == nil {
-		c.memo = make(map[memoKey]float64, 64)
+		c.memo = make(map[memoKey]float64, 8)
 	}
 	c.memo[key] = out
 	return out

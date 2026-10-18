@@ -405,12 +405,18 @@ type Option struct {
 
 // DevourOptions lists the meals the inmate in cell n can start a consume on.
 func (s *State) DevourOptions(n int) []Option {
+	return s.DevourOptionsInto(n, nil)
+}
+
+// DevourOptionsInto appends consume options to out, allowing hot callers to
+// reuse fixed-size storage.
+func (s *State) DevourOptionsInto(n int, out []Option) []Option {
+	out = out[:0]
 	cell := &s.Cells[n]
 	if cell.Sealed || !cell.HasInmate {
-		return nil
+		return out
 	}
 	eater := cell.Inmate
-	var out []Option
 	for i := range s.Cells {
 		c := &s.Cells[i]
 		if i == n {
@@ -425,23 +431,53 @@ func (s *State) DevourOptions(n int) []Option {
 	return out
 }
 
+// HasDevourOption reports whether a cell has at least one legal meal.
+func (s *State) HasDevourOption(n int) bool {
+	cell := &s.Cells[n]
+	if cell.Sealed || !cell.HasInmate {
+		return false
+	}
+	eater := cell.Inmate
+	for i := range s.Cells {
+		if i == n {
+			continue
+		}
+		candidate := &s.Cells[i]
+		if !candidate.Sealed && candidate.HasInmate && s.CanEat(eater, candidate.Inmate) {
+			return true
+		}
+		if candidate.Sealed && candidate.Scratch && eater.Beast == Wolf && candidate.HasHidden && candidate.Hidden.Tier == eater.Tier && eater.Tier < Rainbow {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *State) StartOptions() []Option {
+	return s.StartOptionsInto(nil)
+}
+
+func (s *State) StartOptionsInto(out []Option) []Option {
 	cell := &s.Cells[s.Position]
 	if !s.CanDevourNow() || s.Phase != PhaseManage || cell.Sealed || !cell.HasInmate {
-		return nil
+		return out[:0]
 	}
-	return s.DevourOptions(s.Position)
+	return s.DevourOptionsInto(s.Position, out)
 }
 
 func (s *State) ChainOptions() []Option {
+	return s.ChainOptionsInto(nil)
+}
+
+func (s *State) ChainOptionsInto(out []Option) []Option {
 	if !s.Chaining.Active {
-		return nil
+		return out[:0]
 	}
 	n := s.boardCellOfID(s.Chaining.Eater)
 	if n < 0 {
-		return nil
+		return out[:0]
 	}
-	opts := s.DevourOptions(n)
+	opts := s.DevourOptionsInto(n, out)
 	if !s.Chaining.OffersSet {
 		return opts
 	}

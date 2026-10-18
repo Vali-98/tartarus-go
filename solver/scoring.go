@@ -432,7 +432,7 @@ func patrolScores(st *engine.State, c *evalCtx) []PatrolScore {
 		case cl.HasInmate:
 			score += P.WWalk * known(cl)
 			why = fmt.Sprintf("its %s can act today", engine.Describe(cl.Inmate))
-			if c.consumesLeft > 0 && P.WConsumeWalk != 0 && len(st.DevourOptions(n)) > 0 {
+			if c.consumesLeft > 0 && P.WConsumeWalk != 0 && st.HasDevourOption(n) {
 				score += P.WConsumeWalk / float64(c.consumesLeft)
 				why += ", and its consume counts for Survival of the Fittest"
 			}
@@ -535,9 +535,10 @@ func devourScores(st *engine.State, c *evalCtx) []scored {
 	tier, beast := int(here.Inmate.Tier), int(here.Inmate.Beast)
 	own := linkLoss(st, c, here.Inmate, false)
 	chained := st.Chaining.Active
-	opts := st.StartOptions()
+	var optionBuffer [engine.CellCount - 1]engine.Option
+	opts := st.StartOptionsInto(optionBuffer[:0])
 	if chained {
-		opts = st.ChainOptions()
+		opts = st.ChainOptionsInto(optionBuffer[:0])
 	}
 	out := make([]scored, 0, len(opts))
 	for _, o := range opts {
@@ -621,7 +622,7 @@ func boardValue(st *engine.State, c *evalCtx) float64 {
 			continue
 		}
 		f := 1.0
-		if len(st.DevourOptions(n)) > 0 {
+		if st.HasDevourOption(n) {
 			f = 1.25
 		}
 		value += c.v[cl.Inmate.Tier] * f
@@ -684,7 +685,8 @@ func pickGift(st *engine.State, c *evalCtx, options []uint8, rnd *rng32) uint8 {
 				continue
 			}
 			got = true
-			sum += boardValue(trial, newContext(trial, c.P))
+			trialContext := newContext(trial, c.P)
+			sum += boardValue(trial, &trialContext)
 		}
 		if !got {
 			continue

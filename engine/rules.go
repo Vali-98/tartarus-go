@@ -954,8 +954,9 @@ func (s *State) devour(from, to int) Result {
 	if from != s.Position {
 		return fail("Only the inmate in the warden's cell can start a consume.")
 	}
+	var options [CellCount - 1]Option
 	var opt *Option
-	for _, o := range s.DevourOptions(from) {
+	for _, o := range s.DevourOptionsInto(from, options[:0]) {
 		if o.Cell == to {
 			o := o
 			opt = &o
@@ -978,7 +979,8 @@ func (s *State) goOnChain() {
 		if n < 0 {
 			break
 		}
-		opts := s.DevourOptions(n)
+		var options [CellCount - 1]Option
+		opts := s.DevourOptionsInto(n, options[:0])
 		if len(opts) == 0 {
 			break
 		}
@@ -1007,7 +1009,8 @@ func (s *State) chainBite(to int) Result {
 	}
 	n := s.boardCellOfID(s.Chaining.Eater)
 	if n >= 0 {
-		for _, o := range s.ChainOptions() {
+		var options [CellCount - 1]Option
+		for _, o := range s.ChainOptionsInto(options[:0]) {
 			if o.Cell == to {
 				s.Chaining.OffersSet = false
 				s.doDevour(n, o, true)
@@ -1321,7 +1324,7 @@ func (s *State) applyGift(g Gift) {
 	case GiftHorn:
 		var ids []int32
 		for _, n := range s.boardIdx() {
-			if len(s.DevourOptions(n)) > 0 {
+			if s.HasDevourOption(n) {
 				ids = append(ids, s.Cells[n].Inmate.ID)
 			}
 		}
@@ -1330,12 +1333,15 @@ func (s *State) applyGift(g Gift) {
 			if n < 0 {
 				continue
 			}
-			var opts []Option
-			for _, o := range s.DevourOptions(n) {
+			var optionBuffer [CellCount - 1]Option
+			opts := s.DevourOptionsInto(n, optionBuffer[:0])
+			kept := opts[:0]
+			for _, o := range opts {
 				if !o.Scratch {
-					opts = append(opts, o)
+					kept = append(kept, o)
 				}
 			}
+			opts = kept
 			if len(opts) == 0 {
 				continue
 			}
@@ -1348,7 +1354,7 @@ func (s *State) applyGift(g Gift) {
 	case GiftBrand:
 		var hungry []int
 		for _, n := range s.boardIdx() {
-			if len(s.DevourOptions(n)) == 0 {
+			if !s.HasDevourOption(n) {
 				hungry = append(hungry, n)
 			}
 		}
@@ -1357,7 +1363,7 @@ func (s *State) applyGift(g Gift) {
 			hungry = hungry[:4]
 		}
 		for _, n := range hungry {
-			if !s.onBoard(n) || len(s.DevourOptions(n)) > 0 {
+			if !s.onBoard(n) || s.HasDevourOption(n) {
 				continue
 			}
 			var possible []int
