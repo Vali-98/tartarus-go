@@ -22,7 +22,7 @@ import (
 	"tartarus/solver"
 )
 
-const windowTitle = "Tartarus"
+const windowTitle = "Tartarus-Go"
 
 var gameTitle = regexp.MustCompile(`^Torchlight: Infinite\s*$`)
 
@@ -72,25 +72,31 @@ type LiveFrame struct {
 	Kind string `json:"kind"`
 }
 
+type mouseUp struct {
+	hwnd uintptr
+	x, y int32
+}
+
 type App struct {
 	ctx context.Context
 
-	mu               sync.Mutex
-	settings         Settings
-	cancel           context.CancelFunc
-	jobID            int64
-	hwnd             uintptr
-	mode             string
-	normal           rect
-	game             GameStatus
-	gameHWND         uintptr
-	placed           bool
-	scanBusy         bool
-	frameID          uint64
-	lastHash         [32]byte
-	captureRequested bool
-	captureReason    string
-	logStatus        LogStatus
+	mu                     sync.Mutex
+	settings               Settings
+	cancel                 context.CancelFunc
+	jobID                  int64
+	hwnd                   uintptr
+	mode                   string
+	normal                 rect
+	game                   GameStatus
+	gameHWND               uintptr
+	placed                 bool
+	scanBusy               bool
+	frameID                uint64
+	lastHash               [32]byte
+	captureRequested       bool
+	captureReason          string
+	restoreAfterManualScan bool
+	logStatus              LogStatus
 }
 
 func NewApp() *App { return &App{settings: defaultSettings(), mode: "analyzer"} }
@@ -127,17 +133,34 @@ func (a *App) startup(ctx context.Context) {
 	// Playouts allocate small short-lived objects: trade memory for fewer collections.
 	debug.SetGCPercent(400)
 	lowerPriority(a.settings.GameFirst)
+	mouseUps := make(chan mouseUp, 8)
 	go a.watchGame()
 	go a.watchLiveScan()
 	go a.watchLog()
-	go runHotkeys(map[int]rune{1: 'O', 2: 'A', 3: 'S', 4: 'L'}, a.onHotkey)
+	go a.watchMouseUps(mouseUps)
+	go runHotkeys(map[int]rune{1: 'O', 2: 'A', 3: 'S', 4: 'L'}, a.onHotkey, func(hwnd uintptr, x, y int32) {
+		select {
+		case mouseUps <- mouseUp{hwnd: hwnd, x: x, y: y}:
+		default:
+		}
+	})
 }
 
 func (a *App) domReady(ctx context.Context) {
 	a.hwnd = findWindow(windowTitle)
-	if a.settings.Mode == "overlay" {
-		a.SetMode("overlay")
+	a.normal, _ = windowRect(a.hwnd)
+}
+
+// RestoreStartupMode applies persisted native window styling after the frontend is ready.
+func (a *App) RestoreStartupMode() string {
+	a.mu.Lock()
+	mode := a.settings.Mode
+	a.mu.Unlock()
+	if mode != "overlay" {
+		mode = "analyzer"
 	}
+	a.SetMode(mode)
+	return mode
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -208,11 +231,56 @@ func (a *App) watchGame() {
 	}
 }
 
+func (a *App) watchMouseUps(events <-chan mouseUp) {
+	var timer *time.Timer
+	var timerC <-chan time.Time
+	var last mouseUp
+	for {
+		select {
+		case <-a.ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
+			return
+		case event := <-events:
+			a.mu.Lock()
+			gameHWND, appHWND := a.gameHWND, a.hwnd
+			isOverlay := a.mode == "overlay"
+			eligible := a.settings.AutoScan && event.hwnd != 0 && event.hwnd == gameHWND
+			a.mu.Unlock()
+			if !eligible || !pointInClient(event.hwnd, event.x, event.y) || isOverlay && pointInClient(appHWND, event.x, event.y) {
+				continue
+			}
+			last = event
+			if timer == nil {
+				timer = time.NewTimer(300 * time.Millisecond)
+			} else {
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(300 * time.Millisecond)
+			}
+			timerC = timer.C
+		case <-timerC:
+			timerC = nil
+			a.mu.Lock()
+			eligible := a.settings.AutoScan && a.gameHWND == last.hwnd
+			a.mu.Unlock()
+			if eligible && foregroundWindow() == last.hwnd && pointInClient(last.hwnd, last.x, last.y) {
+				a.requestCapture("click")
+			}
+		}
+	}
+}
+
 // watchLiveScan captures only fresh frames while the game is foreground.
 func (a *App) watchLiveScan() {
 	for t := time.NewTicker(350 * time.Millisecond); ; <-t.C {
 		a.mu.Lock()
-		if !a.settings.AutoScan || !a.game.Foreground || a.gameHWND == 0 || a.scanBusy {
+		if (!a.settings.AutoScan && !a.captureRequested) || !a.game.Foreground || a.gameHWND == 0 || a.scanBusy {
 			a.mu.Unlock()
 			continue
 		}
@@ -253,8 +321,16 @@ func (a *App) watchLiveScan() {
 		a.lastHash = hash
 		a.frameID++
 		id := a.frameID
+		restore := a.restoreAfterManualScan && kind == "manual"
+		restoreHwnd := a.hwnd
+		if restore {
+			a.restoreAfterManualScan = false
+		}
 		a.mu.Unlock()
 		wr.EventsEmit(a.ctx, "scan-frame", LiveFrame{ID: id, JPG: base64.StdEncoding.EncodeToString(encoded.Bytes()), Kind: kind})
+		if restore && foregroundWindow() == hwnd {
+			activateWindow(restoreHwnd)
+		}
 	}
 }
 
@@ -263,6 +339,26 @@ func (a *App) requestCapture(reason string) {
 	a.captureRequested = true
 	a.captureReason = reason
 	a.mu.Unlock()
+}
+
+// ScanNow requests one capture through the normal foreground/backpressure pipeline.
+func (a *App) ScanNow() bool {
+	a.mu.Lock()
+	hwnd := a.gameHWND
+	ready := hwnd != 0 && a.game.Running
+	needFocus := ready && !a.game.Foreground && a.mode != "overlay"
+	a.mu.Unlock()
+	if !ready {
+		return false
+	}
+	if needFocus && !activateWindow(hwnd) {
+		return false
+	}
+	a.mu.Lock()
+	a.restoreAfterManualScan = needFocus
+	a.mu.Unlock()
+	a.requestCapture("manual")
+	return true
 }
 
 func (a *App) finishCapture() {
@@ -299,11 +395,10 @@ func (a *App) placeOverlay(g *gameWindow) {
 		return
 	}
 	cur, _ := windowRect(a.hwnd)
-	w := int(cur.Right - cur.Left)
-	x, y := int(g.Rect.Right)-w-16, int(g.Rect.Top)+48
-	if g.Minimized || x < 0 {
-		sw, _ := screenSize()
-		x, y = sw-w-16, 48
+	h, _ := screenSize()
+	x, y := int(g.Rect.Left)+16, int(g.Rect.Bottom)-int(cur.Bottom-cur.Top)-16
+	if g.Minimized || y < 0 {
+		x, y = 16, h-int(cur.Bottom-cur.Top)-16
 	}
 	setPos(a.hwnd, hwndTopmost, x, y, 0, 0, swpNoSize|swpNoActivate)
 	a.mu.Lock()
@@ -335,8 +430,8 @@ func (a *App) SetMode(mode string) {
 		w, hgt := a.overlaySize(h, 220)
 		x, y := s.OverlayX, s.OverlayY
 		if x < 0 {
-			sw, _ := screenSize()
-			x, y = sw-w-16, 48
+			_, sh := screenSize()
+			x, y = 16, sh-hgt-16
 		}
 		setPos(h, hwndTopmost, x, y, w, hgt, swpNoActivate|swpShowWindow)
 		if g, ok := findGame(gameTitle); ok && s.OverlayX < 0 {
@@ -367,7 +462,16 @@ func (a *App) OverlayHeight(heightDIP int) {
 	if mode != "overlay" || a.hwnd == 0 {
 		return
 	}
-	w, h := a.overlaySize(a.hwnd, max(40, min(900, heightDIP)))
+	cur, ok := windowRect(a.hwnd)
+	if !ok {
+		return
+	}
+	_, h := a.overlaySize(a.hwnd, max(40, min(900, heightDIP)))
+	w := int(cur.Right - cur.Left)
+	currentHeight := int(cur.Bottom - cur.Top)
+	if currentHeight >= h-1 && currentHeight <= h+1 {
+		return
+	}
 	setPos(a.hwnd, hwndTopmost, 0, 0, w, h, swpNoMove|swpNoActivate)
 }
 

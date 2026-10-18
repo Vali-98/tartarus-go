@@ -31,11 +31,16 @@ var (
 	procIsWindowVisible          = user32.NewProc("IsWindowVisible")
 	procIsIconic                 = user32.NewProc("IsIconic")
 	procGetForegroundWindow      = user32.NewProc("GetForegroundWindow")
+	procSetForegroundWindow      = user32.NewProc("SetForegroundWindow")
 	procRegisterHotKey           = user32.NewProc("RegisterHotKey")
 	procUnregisterHotKey         = user32.NewProc("UnregisterHotKey")
 	procGetMessageW              = user32.NewProc("GetMessageW")
 	procGetDpiForWindow          = user32.NewProc("GetDpiForWindow")
 	procGetSystemMetrics         = user32.NewProc("GetSystemMetrics")
+	procSetWindowsHookExW        = user32.NewProc("SetWindowsHookExW")
+	procCallNextHookEx           = user32.NewProc("CallNextHookEx")
+	procUnhookWindowsHookEx      = user32.NewProc("UnhookWindowsHookEx")
+	procGetModuleHandleW         = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetModuleHandleW")
 )
 
 const (
@@ -71,6 +76,12 @@ const (
 	wdaExclude    = 0x11
 	lwaAlpha      = 0x2
 	wmHotkey      = 0x0312
+	whMouseLL     = 14
+	hcAction      = 0
+	wmLButtonUp   = 0x0202
+	wmRButtonUp   = 0x0205
+	wmMButtonUp   = 0x0208
+	wmXButtonUp   = 0x020C
 	modAlt        = 0x1
 	modControl    = 0x2
 	modNoRepeat   = 0x4000
@@ -80,6 +91,13 @@ const (
 
 type rect struct{ Left, Top, Right, Bottom int32 }
 type point struct{ X, Y int32 }
+type mouseLLHookData struct {
+	Point     point
+	MouseData uint32
+	Flags     uint32
+	Time      uint32
+	ExtraInfo uintptr
+}
 
 func utf16(s string) *uint16 { p, _ := syscall.UTF16PtrFromString(s); return p }
 
@@ -245,22 +263,60 @@ func captureGameFrame(hwnd uintptr) (*image.RGBA, error) {
 	return screenshot.CaptureRect(r)
 }
 
+func pointInClient(hwnd uintptr, x, y int32) bool {
+	var bounds rect
+	if ok, _, _ := procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds))); ok == 0 {
+		return false
+	}
+	topLeft := point{X: bounds.Left, Y: bounds.Top}
+	bottomRight := point{X: bounds.Right, Y: bounds.Bottom}
+	if ok, _, _ := procClientToScreen.Call(hwnd, uintptr(unsafe.Pointer(&topLeft))); ok == 0 {
+		return false
+	}
+	if ok, _, _ := procClientToScreen.Call(hwnd, uintptr(unsafe.Pointer(&bottomRight))); ok == 0 {
+		return false
+	}
+	return x >= topLeft.X && x < bottomRight.X && y >= topLeft.Y && y < bottomRight.Y
+}
+
 func foregroundWindow() uintptr {
 	h, _, _ := procGetForegroundWindow.Call()
 	return h
+}
+
+func activateWindow(hwnd uintptr) bool {
+	if hwnd == 0 {
+		return false
+	}
+	showWindow(hwnd, swShow)
+	ok, _, _ := procSetForegroundWindow.Call(hwnd)
+	return ok != 0
 }
 
 // ---------- Global hotkeys ----------
 
 // runHotkeys registers Ctrl+Alt+<key> hotkeys and calls fn with the id of
 // each press. It blocks, so run it in its own goroutine.
-func runHotkeys(keys map[int]rune, fn func(id int)) {
+func runHotkeys(keys map[int]rune, fn func(id int), onMouseUp func(hwnd uintptr, x, y int32)) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	for id, k := range keys {
 		procRegisterHotKey.Call(0, uintptr(id), modControl|modAlt|modNoRepeat, uintptr(k))
 	}
+	mouseCallback := syscall.NewCallback(func(code uintptr, message uintptr, input *mouseLLHookData) uintptr {
+		if code == hcAction && onMouseUp != nil && (message == wmLButtonUp || message == wmRButtonUp || message == wmMButtonUp || message == wmXButtonUp) {
+			foreground := foregroundWindow()
+			onMouseUp(foreground, input.Point.X, input.Point.Y)
+		}
+		result, _, _ := procCallNextHookEx.Call(0, uintptr(code), message, uintptr(unsafe.Pointer(input)))
+		return result
+	})
+	module, _, _ := procGetModuleHandleW.Call(0)
+	hook, _, _ := procSetWindowsHookExW.Call(whMouseLL, mouseCallback, module, 0)
 	defer func() {
+		if hook != 0 {
+			procUnhookWindowsHookEx.Call(hook)
+		}
 		for id := range keys {
 			procUnregisterHotKey.Call(0, uintptr(id))
 		}

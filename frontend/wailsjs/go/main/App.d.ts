@@ -19,9 +19,13 @@ export function OverlayMoved():Promise<void>;
 
 export function Quit():Promise<void>;
 
+export function RestoreStartupMode():Promise<string>;
+
 export function SaveSettings(arg1:main.Settings):Promise<void>;
 
 export function ScanComplete(arg1:number):Promise<void>;
+
+export function ScanNow():Promise<boolean>;
 
 export function SetLogPath(arg1:string):Promise<main.Settings>;
 

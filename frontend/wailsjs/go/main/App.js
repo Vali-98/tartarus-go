@@ -34,12 +34,20 @@ export function Quit() {
   return window['go']['main']['App']['Quit']();
 }
 
+export function RestoreStartupMode() {
+  return window['go']['main']['App']['RestoreStartupMode']();
+}
+
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
 
 export function ScanComplete(arg1) {
   return window['go']['main']['App']['ScanComplete'](arg1);
+}
+
+export function ScanNow() {
+  return window['go']['main']['App']['ScanNow']();
 }
 
 export function SetLogPath(arg1) {

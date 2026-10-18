@@ -15,10 +15,13 @@ let game = { running: false, foreground: false };
 let logStatus = { state: 'searching', message: 'Locating UE_game.log...' };
 let logPathDraft = null;
 let runEnded = false;
+let treasureStep = '';
 const lastEvent = {};
 let solveTimer = 0;
 let scanWorker = null;
 let scanId = 0;
+let overlayDragging = false;
+let overlayHeight = 0;
 let scanInfo = { status: 'No screenshot read yet.', image: '', checks: [], notes: [] };
 
 // ---------- DOM helpers ----------
@@ -121,7 +124,7 @@ function processImage(blob, frameID, kind = '') {
 }
 
 function readLiveFrame(frame) {
-  if (!settings.autoScan || !frame || !frame.jpg) {
+  if ((!settings.autoScan && frame && frame.kind !== 'manual') || !frame || !frame.jpg) {
     if (frame && frame.id) api().ScanComplete(frame.id);
     return;
   }
@@ -129,6 +132,7 @@ function readLiveFrame(frame) {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   scanInfo.status = frame.kind && frame.kind !== 'foreground' ? `Live log trigger: ${frame.kind}` : 'Live foreground scan';
+  render();
   processImage(new Blob([bytes], { type: 'image/jpeg' }), frame.id, frame.kind);
 }
 
@@ -152,6 +156,7 @@ function applyPick(result) {
   next.freshOffer = fresh;
   if (fresh) next.startEvent = '';
   board = next;
+  treasureStep = '';
   runEnded = false;
   selected = next.warden;
   const names = result.cards.map((card) => meta.tools.find((tool) => tool.id === card.sim)?.name || card.sim);
@@ -167,6 +172,7 @@ function applyPick(result) {
 }
 
 function applyTreasureChoice() {
+  treasureStep = '';
   const next = JSON.parse(JSON.stringify(board));
   next.phase = 'choice';
   next.pending = 'gift';
@@ -187,6 +193,7 @@ function applyTreasureChoice() {
 
 function applyScan(result, frameKind = '') {
   if (frameKind === 'run-end') {
+    treasureStep = '';
     runEnded = true;
     summary = null;
     advice = null;
@@ -197,6 +204,13 @@ function applyScan(result, frameKind = '') {
   }
   if (!result.ok) {
     if (frameKind === 'treasure') {
+      treasureStep = 'view';
+      scanInfo.status = "Warden's Treasure: select View Prison Status in the game to rescan the board.";
+      scanInfo.checks = [];
+      render();
+      return;
+    }
+    if (treasureStep === 'return') {
       applyTreasureChoice();
       return;
     }
@@ -315,28 +329,46 @@ function applyScan(result, frameKind = '') {
     });
     checks.push({ label: 'Consume selection screen: verify other darkened cells', conf: 0, cell: next.warden });
   }
-  const treasureChoice = frameKind === 'treasure';
-  if (treasureChoice) {
-    next.phase = 'choice';
-    next.pending = 'gift';
-    next.offer = meta.gifts.map((gift) => gift.id);
-    next.giftPicks = next.startEvent === 'opulence' ? 3 : 1;
-  }
+  const returnToSelection = !!(result.chromatic && result.chromatic.returnToSelection);
   checks.push({ label: 'Verify the objective; it is not read automatically', conf: 0, cell: -1 });
   if (result.notes) result.notes.forEach((note) => checks.push({ label: note, conf: 0, cell: -1 }));
 
   board = next;
-  runEnded = false;
   const stateChanged = previous !== JSON.stringify(next);
   const live = scanInfo.status.startsWith('Live') || scanInfo.status.startsWith('Reading foreground');
-  const controlsReady = treasureChoice || !!result.chain || !!(result.doors && result.doors.cells.length) || !!result.decision;
-  scanInfo.status = treasureChoice
-    ? `Warden's Treasure: choose a gift${next.giftPicks > 1 ? ` (${next.giftPicks} picks)` : ''}.`
-    : `${live ? 'Live' : 'Board'} read in ${result.ms} ms${result.loc ? ` (match ${(result.loc.score || 0).toFixed(2)})` : ''}. Review ${checks.length} item${checks.length === 1 ? '' : 's'}.${stateChanged ? '' : ' Board unchanged.'}`;
+  const controlsReady = !!result.chain || !!(result.doors && result.doors.cells.length) || !!result.decision;
+  scanInfo.status = `${live ? 'Live' : 'Board'} read in ${result.ms} ms${result.loc ? ` (match ${(result.loc.score || 0).toFixed(2)})` : ''}. Review ${checks.length} item${checks.length === 1 ? '' : 's'}.${stateChanged ? '' : ' Board unchanged.'}`;
   scanInfo.checks = checks;
   scanInfo.notes = result.notes || [];
   localStorage.setItem(KEY, JSON.stringify(board));
   selected = result.warden ? result.warden.cell : selected;
+  if (returnToSelection) {
+    treasureStep = 'return';
+    scanInfo.status = "Board rescanned. Click Return to Selection in the game to continue.";
+    summary = null;
+    advice = null;
+    render();
+    return;
+  }
+  if (treasureStep === 'return') {
+    applyTreasureChoice();
+    return;
+  }
+  if (frameKind === 'treasure') {
+    treasureStep = 'view';
+    scanInfo.status = "Warden's Treasure: select View Prison Status in the game to rescan the board.";
+    summary = null;
+    advice = null;
+    render();
+    return;
+  }
+  if (treasureStep === 'view') {
+    scanInfo.status = "Warden's Treasure: select View Prison Status in the game to rescan the board.";
+    summary = null;
+    advice = null;
+    render();
+    return;
+  }
   render();
   if (controlsReady && (stateChanged || advice && advice.error)) {
     summary = null;
@@ -545,11 +577,27 @@ function renderAnalyzer() {
   }
 }
 
+async function scanNow() {
+  scanInfo.status = 'Requesting a fresh game screenshot...';
+  render();
+  try {
+    const queued = await api().ScanNow();
+    scanInfo.status = queued
+      ? 'Manual scan queued; the game may briefly come to the foreground.'
+      : 'Scan unavailable. Make sure the game is running and its window is accessible.';
+  } catch (error) {
+    scanInfo.status = `Scan failed: ${error.message || error}`;
+  }
+  render();
+}
+
 function renderOverlay() {
   const body = document.getElementById('ov-body');
   const best = summary && summary.options[0];
   const label = runEnded ? 'Run complete' : best ? best.label : advice && !advice.error ? advice.label : advice && advice.error ? '' : 'Solving...';
   const kids = [];
+  if (treasureStep === 'return') kids.push(h('div', { class: 'ov-prompt' }, 'Board rescanned. Click Return to Selection in the game.'));
+  else if (treasureStep === 'view') kids.push(h('div', { class: 'ov-prompt' }, 'Select View Prison Status in the game to rescan the board.'));
   if (advice && advice.error) kids.push(h('div', { class: 'ov-why' }, advice.error));
   else {
     kids.push(h('div', { class: 'ov-best' }, label));
@@ -559,14 +607,29 @@ function renderOverlay() {
       kids.push(h('div', { class: 'ov-foot' }, `${summary.rounds} playouts${summary.done ? '' : '...'}  Ctrl+Alt+S re-solve, Ctrl+Alt+A analyzer`));
     }
   }
+  if (!settings.clickThrough) {
+    kids.push(h('button', {
+      class: 'ov-scan',
+      disabled: !game.running,
+      title: 'Capture the current game screen, briefly bringing the game forward if needed',
+      onclick: scanNow,
+    }, 'Scan now'));
+  }
   body.replaceChildren(...kids);
   document.getElementById('ov-dot').className = 'dot ' + (game.running ? 'on' : 'off');
-  document.getElementById('ov-lock').textContent = settings.clickThrough ? 'Unlock' : 'Lock';
+  const lock = document.getElementById('ov-lock');
+  lock.textContent = settings.clickThrough ? 'Unlock (Ctrl+Alt+L)' : 'Lock';
+  lock.title = settings.clickThrough ? 'Click-through is on. Press Ctrl+Alt+L to unlock.' : 'Enable click-through (Ctrl+Alt+L to toggle).';
   document.body.classList.toggle('collapsed', !!settings.collapsed);
-  if (document.body.classList.contains('overlay')) {
-    const hgt = Math.ceil(document.getElementById('overlay').getBoundingClientRect().height);
-    api().OverlayHeight(hgt);
-  }
+  resizeOverlayToContent();
+}
+
+function resizeOverlayToContent() {
+  if (!document.body.classList.contains('overlay') || overlayDragging) return;
+  const hgt = Math.ceil(document.getElementById('overlay').getBoundingClientRect().height);
+  if (Math.abs(hgt - overlayHeight) < 2) return;
+  overlayHeight = hgt;
+  api().OverlayHeight(hgt);
 }
 
 function render() {
@@ -584,6 +647,7 @@ function render() {
 // ---------- Startup ----------
 
 function setMode(mode) {
+  if (mode === 'overlay') overlayHeight = 0;
   document.body.classList.toggle('overlay', mode === 'overlay');
   render();
 }
@@ -620,6 +684,7 @@ async function init() {
   document.getElementById('ov-fold').onclick = () => saveSettings({ collapsed: !settings.collapsed });
   document.getElementById('ov-lock').onclick = () => saveSettings({ clickThrough: !settings.clickThrough });
   document.getElementById('reset').onclick = () => { board = blankBoard(); changed(true); };
+  document.getElementById('scan-now-full').onclick = scanNow;
   document.getElementById('read-shot').onclick = () => document.getElementById('shot-file').click();
   document.getElementById('shot-file').onchange = (event) => readScreenshot(event.target.files[0]);
   window.addEventListener('paste', (event) => {
@@ -646,9 +711,19 @@ async function init() {
     logStatus = await api().GetLogStatus();
     render();
   };
-  window.addEventListener('mouseup', () => { if (document.body.classList.contains('overlay')) api().OverlayMoved(); });
+  window.addEventListener('mousedown', (event) => {
+    if (document.body.classList.contains('overlay') && event.target.closest('.ov-bar') && !event.target.closest('button')) overlayDragging = true;
+  });
+  window.addEventListener('mouseup', () => {
+    if (!document.body.classList.contains('overlay')) return;
+    const moved = overlayDragging;
+    overlayDragging = false;
+    if (moved) api().OverlayMoved();
+    resizeOverlayToContent();
+  });
   rt.EventsOn('settings', (s) => { settings = s; render(); });
-  setMode(settings.mode);
+  const restoredMode = await api().RestoreStartupMode();
+  setMode(restoredMode);
   render();
   solve();
 }

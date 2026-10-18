@@ -1474,6 +1474,14 @@
     const X1 = Math.min(img.width - 1, Math.ceil(cx + 40 * u));
     const Y0 = Math.max(0, Math.floor(cy + 10 * u));
     const Y1 = Math.min(img.height - 1, Math.ceil(cy + 410 * u));
+    const returnToSelection = textLines(img, X0, Y0, X1, Y1, { minH: 6, maxH: Math.max(48, img.height * 0.07) })
+      .some((line) => line.pieces.some((piece) => {
+        const words = piece.words.map((word) => word.glyphs.length);
+        const tail = words.slice(-3);
+        const exact = tail.length === 3 && tail.reduce((sum, count, i) => sum + Math.abs(count - [6, 2, 9][i]), 0) <= 2;
+        const merged = tail.length === 2 && Math.abs(tail[0] - 8) <= 1 && Math.abs(tail[1] - 9) <= 1;
+        return exact || merged;
+      }));
     const sw = X1 - X0 + 2;
     const sum = new Uint32Array(sw * (Y1 - Y0 + 2));
     for (let y = Y0; y <= Y1; y++) {
@@ -1523,7 +1531,7 @@
     // else (two saved screenshots).
     let count = 0;
     while (count < slots.length && slots[count].filled) count += 1;
-    return { count, slots, label, conf: 0.5 };
+    return { count, slots, label, conf: 0.5, returnToSelection };
   }
 
   // The objective text, left of the board above the instruments, as a box
