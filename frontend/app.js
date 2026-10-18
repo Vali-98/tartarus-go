@@ -210,6 +210,13 @@ function applyScan(result, frameKind = '') {
       render();
       return;
     }
+    if (treasureStep === 'view' && frameKind === 'board') {
+      treasureStep = 'return';
+      scanInfo.status = 'Treasure status changed. Click Return to Selection in the game to continue.';
+      scanInfo.checks = [];
+      render();
+      return;
+    }
     if (treasureStep === 'return') {
       applyTreasureChoice();
       return;
@@ -217,6 +224,10 @@ function applyScan(result, frameKind = '') {
     scanInfo.status = result.reason;
     scanInfo.checks = [];
     scanInfo.notes = [];
+    if (frameKind) {
+      summary = null;
+      advice = { error: 'Waiting for the current game controls to be readable.' };
+    }
     render();
     return;
   }
@@ -276,6 +287,11 @@ function applyScan(result, frameKind = '') {
   if (result.doors && result.doors.cells.length) {
     next.phase = 'patrol';
     next.dest = result.doors.cells.filter((n) => n !== next.warden);
+    next.usedSwap = false;
+    next.usedDevour = false;
+    next.noSwap = false;
+    next.noDevour = false;
+    next.devourAfterSwap = false;
     addCheck('Patrol cards', result.doors.conf);
     if (result.doors.hidden && result.doors.hidden.length) checks.push({ label: `Card number obscured at cell ${result.doors.hidden.map((n) => String(n + 1).padStart(2, '0')).join(', ')}`, conf: 0, cell: result.doors.hidden[0] });
   } else if (result.decision) {
@@ -292,9 +308,9 @@ function applyScan(result, frameKind = '') {
     next.usedDevour = false;
     next.noSwap = !result.decision.replace;
     next.noDevour = !result.decision.consume;
+    next.devourAfterSwap = next.noSwap && result.decision.consume;
     if (next.noSwap && result.decision.consume) {
       next.usedSwap = true;
-      next.devourAfterSwap = true;
     }
   }
   next.chain = false;
@@ -342,9 +358,11 @@ function applyScan(result, frameKind = '') {
   scanInfo.notes = result.notes || [];
   localStorage.setItem(KEY, JSON.stringify(board));
   selected = result.warden ? result.warden.cell : selected;
-  if (returnToSelection) {
+  if (returnToSelection || treasureStep === 'view' && frameKind === 'board') {
     treasureStep = 'return';
-    scanInfo.status = "Board rescanned. Click Return to Selection in the game to continue.";
+    scanInfo.status = returnToSelection
+      ? "Board rescanned. Click Return to Selection in the game to continue."
+      : 'Board updated. Click Return to Selection in the game to continue.';
     summary = null;
     advice = null;
     render();
